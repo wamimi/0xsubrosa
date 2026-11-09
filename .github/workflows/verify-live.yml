@@ -1,0 +1,28 @@
+name: verify-live
+
+on:
+  workflow_run:
+    workflows: ["pages-build-deployment"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Compare live hash with published hash
+        run: |
+          expected=$(awk '{print $1}' index.html.sha256)
+          local_hash=$(sha256sum index.html | awk '{print $1}')
+          if [ "$expected" != "$local_hash" ]; then
+            echo "index.html.sha256 does not match index.html in the repo"; exit 1
+          fi
+          for i in 1 2 3 4 5 6; do
+            live=$(curl -fsS "https://wamimi.github.io/0xsubrosa/?nocache=$RANDOM" | sha256sum | awk '{print $1}')
+            if [ "$live" = "$expected" ]; then echo "Live page matches: $live"; exit 0; fi
+            echo "Attempt $i: live $live, expected $expected. Waiting for the CDN."; sleep 30
+          done
+          echo "Live page does not match the published hash"; exit 1
